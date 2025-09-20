@@ -107,7 +107,7 @@ nimbus-devsecops-starter/
 ### 1. Initial Setup
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR-ORG/nimbus-devsecops-starter.git
+git clone https://github.com/Jerryabah/nimbus-devsecops-starter.git
 cd nimbus-devsecops-starter
 
 # Configure AWS credentials for GitHub Actions
