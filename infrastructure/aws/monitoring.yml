@@ -1,0 +1,335 @@
+# infrastructure/aws/monitoring.yml
+# Nimbus Analytics - Comprehensive Security Monitoring Stack
+# Real-time threat detection and compliance monitoring
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Nimbus Analytics - Security monitoring and alerting infrastructure'
+
+Parameters:
+  ClusterName:
+    Type: String
+    Default: nimbus-security-cluster
+    Description: Name of the ECS cluster to monitor
+
+  AlertEmail:
+    Type: String
+    Description: Email address for security alerts
+    AllowedPattern: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [development, staging, production]
+
+  SlackWebhookUrl:
+    Type: String
+    Default: ''
+    Description: Optional Slack webhook URL for notifications
+    NoEcho: true
+
+Resources:
+  #######################################################################
+  # SNS Topics for Security Alerts
+  #######################################################################
+  CriticalSecurityAlerts:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'nimbus-critical-security-alerts-${Environment}'
+      DisplayName: 'Nimbus Critical Security Alerts'
+      KmsMasterKeyId: alias/aws/sns
+
+  SecurityWarnings:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'nimbus-security-warnings-${Environment}'
+      DisplayName: 'Nimbus Security Warnings'
+      KmsMasterKeyId: alias/aws/sns
+
+  ComplianceAlerts:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'nimbus-compliance-alerts-${Environment}'
+      DisplayName: 'Nimbus Compliance Alerts'
+      KmsMasterKeyId: alias/aws/sns
+
+  # Email Subscriptions
+  CriticalAlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      TopicArn: !Ref CriticalSecurityAlerts
+      Endpoint: !Ref AlertEmail
+
+  SecurityWarningsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      TopicArn: !Ref SecurityWarnings
+      Endpoint: !Ref AlertEmail
+
+  ComplianceAlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      TopicArn: !Ref ComplianceAlerts
+      Endpoint: !Ref AlertEmail
+
+  #######################################################################
+  # CloudWatch Log Groups for Security Events
+  #######################################################################
+  SecurityEventsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/nimbus/security-events/${Environment}'
+      RetentionInDays: 365  # 1 year retention for compliance
+      KmsKeyId: !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/logs'
+
+  ContainerSecurityLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/nimbus/container-security/${Environment}'
+      RetentionInDays: 90
+      KmsKeyId: !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/logs'
+
+  ComplianceAuditLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/nimbus/compliance-audit/${Environment}'
+      RetentionInDays: 2555  # 7 years for SOX compliance
+      KmsKeyId: !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/logs'
+
+  #######################################################################
+  # Container Security Monitoring Alarms
+  #######################################################################
+  # High CPU Usage - Potential crypto-mining or DoS
+  HighCPUUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'nimbus-high-cpu-${Environment}'
+      AlarmDescription: 'Container CPU usage exceeds 80% - potential security threat'
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ClusterName
+      AlarmActions:
+        - !Ref CriticalSecurityAlerts
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: SecurityControl
+          Value: 'resource-exhaustion-detection'
+
+  # High Memory Usage - Memory exhaustion attack
+  HighMemoryUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'nimbus-high-memory-${Environment}'
+      AlarmDescription: 'Container memory usage exceeds 90% - potential memory exhaustion'
+      MetricName: MemoryUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 90
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ClusterName
+      AlarmActions:
+        - !Ref CriticalSecurityAlerts
+      TreatMissingData: notBreaching
+
+  # Container Restart Frequency - Potential attack or instability
+  ContainerRestartAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'nimbus-container-restarts-${Environment}'
+      AlarmDescription: 'High container restart frequency detected'
+      MetricName: ContainerInstanceCount
+      Namespace: AWS/ECS
+      Statistic: Sum
+      Period: 900  # 15 minutes
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ClusterName
+      AlarmActions:
+        - !Ref SecurityWarnings
+
+  #######################################################################
+  # Network Security Monitoring
+  #######################################################################
+  # Unusual Network Traffic Volume
+  HighNetworkPacketsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'nimbus-high-network-traffic-${Environment}'
+      AlarmDescription: 'Unusual network traffic detected - potential DDoS or data exfiltration'
+      MetricName: NetworkPacketsIn
+      Namespace: AWS/ECS
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 50000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ClusterName
+      AlarmActions:
+        - !Ref CriticalSecurityAlerts
+
+  # High Error Rate - Potential attack or system compromise
+  HighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'nimbus-high-error-rate-${Environment}'
+      AlarmDescription: 'High HTTP error rate detected - potential attack'
+      MetricName: HTTPCode_Target_5XX_Count
+      Namespace: AWS/ApplicationELB
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref SecurityWarnings
+
+  #######################################################################
+  # Security Events Detection Rules
+  #######################################################################
+  SecurityEventsMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref SecurityEventsLogGroup
+      FilterPattern: '[timestamp, request_id, level="ERROR", msg*="SECURITY"]'
+      MetricTransformations:
+        - MetricNamespace: 'Nimbus/Security'
+          MetricName: 'SecurityEvents'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  SecurityEventsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'nimbus-security-events-${Environment}'
+      AlarmDescription: 'Security events detected in application logs'
+      MetricName: SecurityEvents
+      Namespace: 'Nimbus/Security'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref CriticalSecurityAlerts
+      TreatMissingData: notBreaching
+
+  # Failed Authentication Attempts
+  FailedAuthMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref SecurityEventsLogGroup
+      FilterPattern: '[timestamp, request_id, level, msg*="authentication failed" || msg*="unauthorized access"]'
+      MetricTransformations:
+        - MetricNamespace: 'Nimbus/Security'
+          MetricName: 'FailedAuthentications'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  FailedAuthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'nimbus-failed-auth-${Environment}'
+      AlarmDescription: 'Multiple failed authentication attempts detected'
+      MetricName: FailedAuthentications
+      Namespace: 'Nimbus/Security'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref SecurityWarnings
+
+  #######################################################################
+  # Compliance Monitoring
+  #######################################################################
+  # SOX Compliance - Data Access Monitoring
+  DataAccessMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ComplianceAuditLogGroup
+      FilterPattern: '[timestamp, user, action="data_access", resource*="financial"]'
+      MetricTransformations:
+        - MetricNamespace: 'Nimbus/Compliance'
+          MetricName: 'FinancialDataAccess'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  # GDPR Compliance - Personal Data Processing
+  PersonalDataProcessingFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ComplianceAuditLogGroup
+      FilterPattern: '[timestamp, user, action="process_personal_data"]'
+      MetricTransformations:
+        - MetricNamespace: 'Nimbus/Compliance'
+          MetricName: 'PersonalDataProcessing'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  #######################################################################
+  # Security Dashboard
+  #######################################################################
+  SecurityDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub 'Nimbus-Security-Dashboard-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ECS", "CPUUtilization", "ClusterName", "${ClusterName}"],
+                  [".", "MemoryUtilization", ".", "."]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "Container Resource Usage",
+                "yAxis": {"left": {"min": 0, "max": 100}},
+                "annotations": {
+                  "horizontal": [
+                    {"value": 80, "label": "CPU Alert Threshold"},
+                    {"value": 90, "label": "Memory Alert Threshold"}
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Nimbus/Security", "SecurityEvents"],
+                  [".", "FailedAuthentications"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Security Events"
+              }
+            },
+            {
+              "type": "metric",
+              "x":

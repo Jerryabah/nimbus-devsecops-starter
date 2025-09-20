@@ -1,0 +1,26 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "nimbus-api-key"
+description = "Nimbus Analytics API Key"
+regex = '''nimbus_[a-zA-Z0-9]{32}'''
+
+[[rules]]
+id = "aws-secret-key"
+description = "AWS Secret Access Key"
+regex = '''(?i)aws(.{0,20})?(?-i)['\"][0-9a-zA-Z\/+]{40}['\"]'''
+
+[[rules]]
+id = "database-connection"
+description = "Database Connection String"
+regex = '''(?i)(database_url|db_url|connection_string)(.{0,20})?['\"][^'\"]+['\"]'''
+
+[allowlist]
+description = "Global allowlist"
+paths = [
+    '''\.git/''',
+    '''node_modules/''',
+    '''vendor/''',
+    '''\.terraform/'''
+]
